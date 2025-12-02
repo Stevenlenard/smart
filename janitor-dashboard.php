@@ -1730,6 +1730,118 @@ try {
     window.loadProfile = loadProfile;
 
   })();
+  /* ===============================
+   REAL-TIME ALERT AUTO-REFRESH
+   Every 5 seconds – no reload
+================================ */
+setInterval(() => {
+    fetch('<?= $_SERVER["PHP_SELF"] ?>?action=get_alerts', {
+        method: 'GET',
+        credentials: 'same-origin'
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (!data.success) return;
+
+        const tbody = document.getElementById("alertsBody");
+        tbody.innerHTML = "";
+
+        if (data.alerts.length === 0) {
+            tbody.innerHTML = `
+                <tr><td colspan="5" class="text-center py-4 text-muted">
+                    No alerts found
+                </td></tr>`;
+            return;
+        }
+
+        data.alerts.forEach(a => {
+            const isRead = parseInt(a.is_read) === 1;
+            const action = isRead
+                ? `<span class="text-muted small">Acknowledged</span>`
+                : `<button class="btn btn-sm btn-success ack-btn"
+                     data-bin-id="${a.bin_id}"
+                     data-title="${a.title}"
+                     data-message="${a.message}">
+                        Acknowledge
+                   </button>`;
+
+            tbody.insertAdjacentHTML('beforeend', `
+                <tr class="${isRead ? "table-light" : ""}">
+                    <td>${a.created_at}</td>
+                    <td>${a.title}</td>
+                    <td class="d-none d-md-table-cell"><small>${a.message}</small></td>
+                    <td class="d-none d-lg-table-cell">${a.bin_code ?? ("Bin " + a.bin_id)}</td>
+                    <td class="text-end">${action}</td>
+                </tr>
+            `);
+        });
+    })
+    .catch(err => console.log("Auto-refresh error:", err));
+}, 5000);
+/* UPDATE RECENT ALERTS ON DASHBOARD */
+function refreshDashboardAlerts() {
+    fetch('<?= $_SERVER["PHP_SELF"] ?>?action=get_alerts')
+        .then(r => r.json())
+        .then(data => {
+            const body = document.getElementById('recentAlertsBody');
+            body.innerHTML = "";
+
+            if (!data.alerts.length) {
+                body.innerHTML = `
+                  <tr><td colspan="5" class="text-center text-muted py-3">No recent alerts</td></tr>`;
+                return;
+            }
+
+            data.alerts.slice(0, 8).forEach(a => {
+                body.insertAdjacentHTML('beforeend', `
+                    <tr>
+                        <td>${a.created_at}</td>
+                        <td><strong>${a.bin_code ?? a.bin_id}</strong></td>
+                        <td>${a.location ?? ""}</td>
+                        <td><span class="badge bg-info">${a.message}</span></td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-soft-primary"
+                                onclick="openViewDetails(event, ${a.bin_id})">View</button>
+                        </td>
+                    </tr>
+                `);
+            });
+        });
+}
+
+setInterval(refreshDashboardAlerts, 5000);
+/* ACKNOWLEDGE BUTTON – REAL TIME UPDATE */
+document.addEventListener("click", function(e){
+    const btn = e.target.closest(".ack-btn");
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.textContent = "Saving...";
+
+    const form = new URLSearchParams();
+    form.append("action", "mark_read");
+    form.append("bin_id", btn.dataset.binId);
+    form.append("title", btn.dataset.title);
+    form.append("message", btn.dataset.message);
+    form.append("notification_type", "ack");
+
+    fetch("notifications.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString()
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) {
+            btn.parentElement.innerHTML =
+                `<span class="text-muted small">Acknowledged</span>`;
+        } else {
+            alert("Failed to acknowledge");
+        }
+    })
+    .catch(err => alert("Server error"));
+});
+
   </script>
   <script src="js/scroll-progress.js"></script>
   <script src="js/password-toggle.js"></script>

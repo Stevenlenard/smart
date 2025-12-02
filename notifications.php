@@ -589,7 +589,52 @@ try {
     } catch (err) {
       console.warn('Header fallback handlers error', err);
     }
-  });
+  }); 
+setInterval(function () {
+    $.get('ajax/get-notifications-admin.php', function (response) {
+        if (!response.success) return;
+
+        let tbody = $("#notificationsTableBody");
+        tbody.empty();
+
+        if (response.notifications.length === 0) {
+            tbody.append('<tr><td colspan="6" class="text-center py-4 text-muted">No notifications found</td></tr>');
+            return;
+        }
+
+        response.notifications.forEach(n => {
+            let isRead = n.is_read == 1 ? 'table-light' : '';
+            let time = n.created_at ? n.created_at : '-';
+            let target = '-';
+
+            if (n.bin_id) {
+                target = n.bin_code ? n.bin_code : "Bin #" + n.bin_id;
+            } else if (n.janitor_id) {
+                target = n.janitor_name ? n.janitor_name : "Janitor #" + n.janitor_id;
+            } else if (n.admin_id) {
+                target = "Admin #" + n.admin_id;
+            }
+
+            tbody.append(`
+                <tr class="${isRead}" data-id="${n.notification_id}">
+                    <td>${time}</td>
+                    <td>${n.notification_type}</td>
+                    <td>${n.title}</td>
+                    <td class="d-none d-md-table-cell"><small>${n.message}</small></td>
+                    <td class="d-none d-lg-table-cell">${target}</td>
+                    <td class="text-end">
+                        ${n.is_read == 0 ?
+                            `<button class="btn btn-sm btn-success mark-read-btn" data-id="${n.notification_id}">
+                                <i class="fas fa-check me-1"></i>Read
+                            </button>` :
+                            `<span class="text-muted small">Read</span>`
+                        }
+                    </td>
+                </tr>
+            `);
+        });
+    }, "json");
+}, 1000);
 </script>
 </body>
 </html>

@@ -1,39 +1,68 @@
 <?php
 require_once '../includes/config.php';
 
-if (!isLoggedIn() || !isAdmin()) {
-    sendJSON(['success' => false, 'message' => 'Unauthorized']);
+header('Content-Type: application/json');
+
+if (!isLoggedIn()) {
+    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+    exit;
 }
 
-try {
-    $filter = $_GET['filter'] ?? 'all';
-    $user_id = getCurrentUserId();
-    
-    $sql = "SELECT n.notification_id, n.title, n.message, n.notification_type, n.is_read, 
-                   n.created_at, b.bin_code, b.location
-            FROM notifications n
-            LEFT JOIN bins b ON n.bin_id = b.bin_id
-            WHERE n.user_id = $user_id";
+$userId = getCurrentUserId();
+$isAdmin = isAdmin();
+$isJanitor = isJanitor();
+$filter = $_GET['filter'] ?? 'all';
 
-    if ($filter !== 'all') {
-        $sql .= " AND n.notification_type = '" . $conn->real_escape_string($filter) . "'";
-    }
+// Base query
+$sql = "
+    SELECT 
+        n.notification_id,
+        n.notification_type,
+        n.title,
+        n.message,
+        n.is_read,
+        n.created_at,
+        b.bin_code,
+        b.location,
+        CONCAT(j.first_name, ' ', j.last_name) AS janitor_name
+    FROM notifications n
+    LEFT JOIN bins b ON n.bin_id = b.bin_id
+    LEFT JOIN janitors j ON n.janitor_id = j.janitor_id
+    WHERE 1
+";
 
-    $sql .= " ORDER BY n.created_at DESC LIMIT 100";
-
-    $result = $conn->query($sql);
-    $notifications = [];
-    
-    while ($row = $result->fetch_assoc()) {
-        $notifications[] = $row;
-    }
-
-    // Get unread count
-    $countResult = $conn->query("SELECT COUNT(*) as unread_count FROM notifications WHERE user_id = $user_id AND is_read = FALSE");
-    $unreadCount = $countResult->fetch_assoc()['unread_count'];
-
-    sendJSON(['success' => true, 'notifications' => $notifications, 'unread_count' => $unreadCount]);
-} catch (Exception $e) {
-    sendJSON(['success' => false, 'message' => $e->getMessage()]);
+// Admin = all
+if ($isJanitor) {
+    $sql .= " AND n.janitor_id = $userId ";
 }
+
+if ($filter !== 'all') {
+    $safe = $conn->real_escape_string($filter);
+    $sql .= " AND n.notification_type = '$safe' ";
+}
+
+$sql .= " ORDER BY n.created_at DESC LIMIT 50";
+
+$result = $conn->query($sql);
+$notifications = [];
+
+while ($row = $result->fetch_assoc()) {
+    $notifications[] = $row;
+}
+
+// Unread count logic
+$unreadQuery = "SELECT COUNT(*) AS unread_count FROM notifications WHERE is_read = 0";
+
+if ($isJanitor) {
+    $unreadQuery .= " AND janitor_id = $userId";
+}
+
+$unreadRes = $conn->query($unreadQuery);
+$unreadCount = $unreadRes->fetch_assoc()['unread_count'];
+
+echo json_encode([
+    'success' => true,
+    'notifications' => $notifications,
+    'unread_count' => $unreadCount
+]);
 ?>
